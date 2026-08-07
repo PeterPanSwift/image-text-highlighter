@@ -1,16 +1,73 @@
 # image-text-highlighter
 
+Find specified text in an image and highlight it with a beautiful glowing outline (iOS-style glow highlight).
+
+Uses the built-in macOS Vision framework for OCR (supports English and Chinese), then draws a glowing rounded-rectangle highlight with Pillow.
+
+[English](#english) | [中文說明](#中文說明)
+
+## Demo
+
+| English (default blue) | Chinese (custom red) |
+| --- | --- |
+| ![English demo](test_menu_marked.png) | ![Chinese demo](test_zh_marked.png) |
+
+---
+
+## English
+
+### Requirements
+
+- macOS (uses the system Vision framework for OCR)
+- Python 3.9+
+
+```bash
+pip3 install Pillow pyobjc-framework-Vision
+```
+
+### Usage
+
+```bash
+python3 circle_text.py image.png "text to highlight"
+```
+
+### Options
+
+| Option | Description |
+| --- | --- |
+| `-o output.png` | Output path (default: `<original name>_marked.png`) |
+| `--color "#FF3B30"` | Highlight color in hex (default: iOS blue `#409CFF`) |
+| `--all` | Highlight every occurrence of the text (default: first match only) |
+
+### Examples
+
+```bash
+# Basic usage
+python3 circle_text.py screenshot.png "Add files or photos"
+
+# Red highlight with a custom output filename
+python3 circle_text.py test_zh.png "圈選文字" --color "#FF3B30" -o result.png
+
+# Highlight all occurrences
+python3 circle_text.py doc.png "keyword" --all
+```
+
+### Features
+
+- **Precise substring locating**: gets an accurate bounding box even when the target is only part of a line
+- **Fuzzy matching**: ignores case, whitespace, and full-width/half-width differences
+- **Auto scaling**: line width, glow size, and padding adapt to the image size — works for large screenshots and small images alike
+- **Helpful errors**: when the text isn't found, all text detected in the image is listed so you can adjust your keyword
+
+---
+
+## 中文說明
+
 在圖片中找到指定文字，並加上漂亮的發光圈選效果（iOS 風格 glow highlight）。
 
 使用 macOS 內建 Vision framework 做 OCR（支援中英文），再用 Pillow 畫出帶光暈的圓角圈選框。
 
-## 效果展示
-
-| 英文（預設藍色） | 中文（自訂紅色） |
-| --- | --- |
-| ![英文範例](test_menu_marked.png) | ![中文範例](test_zh_marked.png) |
-
-## 需求
+### 需求
 
 - macOS（使用系統內建的 Vision framework 做 OCR）
 - Python 3.9+
@@ -19,7 +76,7 @@
 pip3 install Pillow pyobjc-framework-Vision
 ```
 
-## 用法
+### 用法
 
 ```bash
 python3 circle_text.py 圖片.png "要標記的文字"
@@ -46,7 +103,7 @@ python3 circle_text.py test_zh.png "圈選文字" --color "#FF3B30" -o result.pn
 python3 circle_text.py doc.png "重點" --all
 ```
 
-## 特色
+### 特色
 
 - **精準子字串定位**：即使目標文字只是某一行的一部分，也會取得精確的邊界框
 - **模糊比對**：自動忽略大小寫、空白、全形半形差異
