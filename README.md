@@ -45,7 +45,7 @@ python3 circle_text.py image.png "text to highlight"
 | `--color "#FF3B30"` | Highlight color in hex (default: iOS blue `#409CFF`) |
 | `--all` | Highlight every occurrence of the text (default: first match only) |
 | `--dim 0.35` | How much to darken the rest of the image, 0–1; `0` disables (default: `0.35`) |
-| `--style bubble` | Highlight style: `bubble` 3D glass bubble (default) or `glow` flat glowing ring |
+| `--style bubble` | Highlight style: `bubble` 3D glass bubble (default), `glow` flat glowing ring, or `crayon` hand-drawn crayon circle |
 | `--no-container` | Disable container detection (by default the highlight expands to the button/menu block the text sits in) |
 | `--extend 60` | Manually extend the box in pixels: one number extends the right side, or `L,T,R,B` for each side |
 
@@ -67,7 +67,7 @@ python3 circle_text.py doc.png "keyword" --all
 - **Precise substring locating**: gets an accurate bounding box even when the target is only part of a line
 - **Fuzzy matching**: ignores case, whitespace, and full-width/half-width differences
 - **Container detection**: if the text sits inside a UI control (popup menu, button, text field), the highlight automatically expands to the control's full block — with sanity checks that fall back to the text box when the detected area is implausibly large
-- **3D glass bubble**: drop shadow, lens magnification, glossy specular highlight, and a top-lit rim make the highlight pop off the page; use `--style glow` for the flat ring look
+- **3D glass bubble**: drop shadow, lens magnification, glossy specular highlight, and a top-lit rim make the highlight pop off the page; `--style glow` gives a flat ring, `--style crayon` a hand-drawn crayon circle with pressure variation and waxy grain
 - **Focus dimming**: everything outside the highlight is slightly darkened (soft edges) so the marked text pops; tune or disable with `--dim`
 - **Auto scaling**: line width, glow size, and padding adapt to the image size — works for large screenshots and small images alike
 - **Helpful errors**: when the text isn't found, all text detected in the image is listed so you can adjust your keyword
@@ -122,7 +122,7 @@ python3 circle_text.py 圖片.png "要標記的文字"
 | `--color "#FF3B30"` | 圈選顏色，hex 格式（預設 iOS 藍 `#409CFF`） |
 | `--all` | 圈選文字出現的所有位置（預設只圈第一個） |
 | `--dim 0.35` | 背景壓暗程度 0–1，`0` 為不壓暗（預設 `0.35`） |
-| `--style bubble` | 圈選樣式：`bubble` 立體玻璃泡泡（預設）/ `glow` 發光框 |
+| `--style bubble` | 圈選樣式：`bubble` 立體玻璃泡泡（預設）/ `glow` 發光框 / `crayon` 手繪蠟筆圈 |
 | `--no-container` | 停用容器偵測（預設會自動把圈選延伸到文字所在的按鈕/選單色塊） |
 | `--extend 60` | 手動延伸圈選框（像素）：單一數字延伸右側，或 `左,上,右,下` 四個值 |
 
@@ -144,7 +144,7 @@ python3 circle_text.py doc.png "重點" --all
 - **精準子字串定位**：即使目標文字只是某一行的一部分，也會取得精確的邊界框
 - **模糊比對**：自動忽略大小寫、空白、全形半形差異
 - **容器偵測**：文字若位於 UI 控制項內（選單、按鈕、輸入框），圈選會自動延伸到整個控制項色塊；偵測結果不合理時（例如抓到整片背景）會自動回退為文字框
-- **3D 玻璃泡泡**：投影、內容微放大、鏡面反光與頂部受光邊緣，讓圈選有浮起的立體感；想用平面發光框可加 `--style glow`
+- **3D 玻璃泡泡**：投影、內容微放大、鏡面反光與頂部受光邊緣，讓圈選有浮起的立體感；`--style glow` 是平面發光框，`--style crayon` 是帶筆壓變化與蠟質顆粒的手繪蠟筆圈
 - **聚焦壓暗**：圈選框以外的區域會稍微變暗（邊緣柔和過渡），讓標記的文字更突出，可用 `--dim` 調整或關閉
 - **自動縮放**：線寬、光暈大小、留白依圖片尺寸調整，大截圖和小圖都適用
 - **友善錯誤提示**：找不到文字時，會列出圖片中實際偵測到的所有文字，方便調整關鍵字

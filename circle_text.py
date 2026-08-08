@@ -375,14 +375,30 @@ def pad_box(img_size, box):
     return (x0, y0, x1, y1), radius
 
 
-def dim_background(img, padded_boxes, strength=0.35):
+# 蠟筆橢圓相對於圈選框的放大比例（手繪會比內容overshoot一些）
+CRAYON_RX, CRAYON_RY = 1.06, 1.30
+
+
+def crayon_ellipse_box(padded_box):
+    """蠟筆樣式使用的橢圓外框。"""
+    x0, y0, x1, y1 = padded_box
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    rx = (x1 - x0) / 2 * CRAYON_RX
+    ry = (y1 - y0) / 2 * CRAYON_RY
+    return (cx - rx, cy - ry, cx + rx, cy + ry)
+
+
+def dim_background(img, padded_boxes, strength=0.35, shape="rect"):
     """壓暗圈選框以外的區域，讓焦點落在圈選的文字上。"""
     W, H = img.size
     img = img.convert("RGBA")
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, round(255 * strength)))
     od = ImageDraw.Draw(overlay)
     for box, radius in padded_boxes:
-        od.rounded_rectangle(box, radius=radius, fill=(0, 0, 0, 0))
+        if shape == "ellipse":
+            od.ellipse(crayon_ellipse_box(box), fill=(0, 0, 0, 0))
+        else:
+            od.rounded_rectangle(box, radius=radius, fill=(0, 0, 0, 0))
     # 讓明暗交界柔和一點
     overlay = overlay.filter(
         ImageFilter.GaussianBlur(max(2, round(min(W, H) * 0.004)))
@@ -587,6 +603,80 @@ def draw_glow_highlight(img, padded_box, radius, color=(64, 156, 255)):
     return img
 
 
+def draw_crayon_highlight(img, padded_box, radius, color=(64, 156, 255)):
+    """手繪蠟筆風格：不規則橢圓、筆壓粗細變化、蠟質顆粒紋理。"""
+    import math
+    import random
+
+    W, H = img.size
+    ex0, ey0, ex1, ey1 = crayon_ellipse_box(padded_box)
+    cx, cy = (ex0 + ex1) / 2, (ey0 + ey1) / 2
+    rx, ry = (ex1 - ex0) / 2, (ey1 - ey0) / 2
+    bh = padded_box[3] - padded_box[1]
+    lw = max(3, round(min(bh * 0.11, min(W, H) * 0.008)))
+
+    # 以框的位置當亂數種子：同一張圖同一目標，每次畫出來都一樣
+    rng = random.Random(round(cx * 31 + cy * 17 + rx * 7 + ry * 3))
+
+    img = img.convert("RGBA")
+    stroke = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+    # 手繪通常會繞兩圈，每圈起點、擾動、顏色深淺都略有不同
+    for p in range(2):
+        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+
+        theta0 = rng.uniform(0, 2 * math.pi)
+        sweep = 2 * math.pi + rng.uniform(0.3, 0.8)  # 頭尾交疊
+        # 半徑擾動：多個不諧和的正弦波疊加，畫出自然的不規則
+        harmonics = [
+            (rng.uniform(0.015, 0.045), rng.uniform(0, 2 * math.pi), k)
+            for k in (2, 3, 5)
+        ]
+        off_x = rng.uniform(-lw * 0.5, lw * 0.5)
+        off_y = rng.uniform(-lw * 0.5, lw * 0.5)
+        shade = 0.82 + 0.28 * rng.random()  # 每圈深淺不同
+        c = tuple(min(255, max(0, round(ch * shade))) for ch in color)
+        alpha = rng.randint(135, 175)
+        w_phase = rng.uniform(0, 2 * math.pi)
+
+        n = max(160, round((rx + ry) * 1.2))
+        for i in range(n + 1):
+            t = theta0 + sweep * i / n
+            mod = 1 + sum(
+                a * math.sin(k * t + ph) for a, ph, k in harmonics
+            )
+            px = cx + off_x + rx * mod * math.cos(t)
+            py = cy + off_y + ry * mod * math.sin(t)
+            # 筆壓變化：粗細沿路徑起伏 + 每點微小抖動
+            w = lw * (0.6 + 0.45 * (0.5 + 0.5 * math.sin(t * 2.3 + w_phase)))
+            px += rng.uniform(-0.8, 0.8)
+            py += rng.uniform(-0.8, 0.8)
+            ld.ellipse(
+                (px - w / 2, py - w / 2, px + w / 2, py + w / 2),
+                fill=c + (alpha,),
+            )
+        stroke.alpha_composite(layer)
+
+    # 蠟筆顆粒：細噪點 + 粗糙蠟面兩層紋理相乘進透明度
+    fine = Image.effect_noise((W, H), 70).point(
+        lambda v: min(255, 110 + v * 3 // 4)
+    )
+    coarse = (
+        Image.effect_noise((max(1, W // 4), max(1, H // 4)), 50)
+        .resize((W, H), Image.BILINEAR)
+        .point(lambda v: min(255, 140 + v // 2))
+    )
+    a = stroke.getchannel("A")
+    a = ImageChops.multiply(a, fine)
+    a = ImageChops.multiply(a, coarse)
+    stroke.putalpha(a)
+    stroke = stroke.filter(ImageFilter.GaussianBlur(0.6))
+
+    img.alpha_composite(stroke)
+    return img
+
+
 # ---------------------------------------------------------------- main ----
 
 def main():
@@ -611,9 +701,10 @@ def main():
     )
     parser.add_argument(
         "--style",
-        choices=["bubble", "glow"],
+        choices=["bubble", "glow", "crayon"],
         default="bubble",
-        help="圈選樣式：bubble 立體玻璃泡泡（預設）/ glow 發光框",
+        help="圈選樣式：bubble 立體玻璃泡泡（預設）/ glow 發光框 / "
+        "crayon 手繪蠟筆",
     )
     parser.add_argument(
         "--no-container",
@@ -660,8 +751,17 @@ def main():
     color = hex_to_rgb(args.color)
     padded = [pad_box(img.size, box) for box in boxes]
     if args.dim > 0:
-        img = dim_background(img, padded, min(args.dim, 0.9))
-    draw = draw_bubble_highlight if args.style == "bubble" else draw_glow_highlight
+        img = dim_background(
+            img,
+            padded,
+            min(args.dim, 0.9),
+            shape="ellipse" if args.style == "crayon" else "rect",
+        )
+    draw = {
+        "bubble": draw_bubble_highlight,
+        "glow": draw_glow_highlight,
+        "crayon": draw_crayon_highlight,
+    }[args.style]
     for box, radius in padded:
         img = draw(img, box, radius, color)
 
