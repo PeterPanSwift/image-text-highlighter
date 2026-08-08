@@ -144,16 +144,21 @@ def build_document_wflow(shell_script):
 APP_DIR = Path.home() / "Applications" / f"{SERVICE_NAME}.app"
 
 
-def build_applescript(python_path, script_path):
-    """「圈選文字.app」droplet 的 AppleScript 原始碼。"""
+def build_applescript(python_path):
+    """「圈選文字.app」droplet 的 AppleScript 原始碼。
+
+    circle_text.py 隨附在 App 的 Resources 內（安裝時複製），
+    執行時以 path to me 取得，避免依賴受 TCC 保護的「文件」資料夾。
+    """
     import shlex
 
-    py, sc = shlex.quote(python_path), shlex.quote(str(script_path))
+    py = shlex.quote(python_path)
     # do shell script 使用 /bin/sh；${f%.*} 為 POSIX 語法可用
     shell_cmd = (
         f'f=" & quoted form of p & "; '
         f'out=\\"${{f%.*}}_marked.png\\"; '
-        f'{py} {sc} \\"$f\\" " & quoted form of t & " -o \\"$out\\" '
+        f'{py} " & quoted form of scriptPath & " \\"$f\\" '
+        f'" & quoted form of t & " -o \\"$out\\" '
         f'>/dev/null && /usr/bin/open -a Preview \\"$out\\"'
     )
     return f'''on run
@@ -161,6 +166,7 @@ def build_applescript(python_path, script_path):
 end run
 
 on open theFiles
+    set scriptPath to POSIX path of (path to me) & "Contents/Resources/circle_text.py"
     repeat with f in theFiles
         set p to POSIX path of f
         set fileName to do shell script "basename " & quoted form of p
@@ -190,7 +196,7 @@ def install_open_with_app(python_path):
     if APP_DIR.exists():
         shutil.rmtree(APP_DIR)
 
-    source = build_applescript(python_path, CIRCLE_TEXT)
+    source = build_applescript(python_path)
     with tempfile.NamedTemporaryFile(
         "w", suffix=".applescript", delete=False
     ) as tmp:
@@ -202,6 +208,9 @@ def install_open_with_app(python_path):
         )
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+    # 將 circle_text.py 複製進 App，避免執行時得存取受保護的資料夾
+    shutil.copy2(CIRCLE_TEXT, APP_DIR / "Contents" / "Resources")
 
     # 宣告可開啟圖片檔，讓它出現在「打開檔案的應用程式」選單
     info_path = APP_DIR / "Contents" / "Info.plist"
@@ -220,6 +229,20 @@ def install_open_with_app(python_path):
     ]
     with open(info_path, "wb") as f:
         plistlib.dump(info, f)
+
+    # 修改過 Info.plist / Resources 之後必須重新簽章，
+    # 否則簽章失效，macOS 會直接拒絕檔案存取且不顯示權限詢問
+    subprocess.run(
+        ["codesign", "--force", "--sign", "-", str(APP_DIR)], check=True
+    )
+
+    # 清掉舊的（可能已被拒絕的）權限記錄，讓詢問視窗能重新出現
+    for service in ("SystemPolicyDocumentsFolder", "SystemPolicyDesktopFolder",
+                    "SystemPolicyDownloadsFolder"):
+        subprocess.run(
+            ["tccutil", "reset", service, "com.vibecoding.circle-text"],
+            check=False, capture_output=True,
+        )
 
     lsregister = (
         "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
