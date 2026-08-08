@@ -164,17 +164,62 @@ def install():
 
     # 請系統重新掃描 Services
     subprocess.run(
+        ["/System/Library/CoreServices/pbs", "-flush"], check=False
+    )
+    subprocess.run(
         ["/System/Library/CoreServices/pbs", "-update"], check=False
     )
 
+    # 手動安裝的快速動作預設是停用的，直接在 pbs 偏好設定中啟用
+    enable_service()
+
+    subprocess.run(
+        ["/System/Library/CoreServices/pbs", "-update"], check=False
+    )
+    subprocess.run(["killall", "Finder"], check=False)
+
     print(f"已安裝: {WORKFLOW_DIR}")
     print("使用方式: 在 Finder 對圖片按右鍵 → 快速動作 → 圈選文字")
-    print("（若沒立即出現，登出再登入或稍等幾秒讓系統重新整理選單）")
+
+
+def enable_service():
+    """在 pbs 偏好設定中啟用本服務（等同於在系統設定的延伸功能中勾選）。
+
+    注意: key 以 "(null)" 開頭會讓 defaults write 解析失敗，
+    因此改用 export → 修改 → import 的方式。
+    """
+    import tempfile
+
+    key = f"(null) - {SERVICE_NAME} - runWorkflowAsService"
+    with tempfile.NamedTemporaryFile(suffix=".plist", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        subprocess.run(
+            ["defaults", "export", "pbs", tmp_path], check=True
+        )
+        with open(tmp_path, "rb") as f:
+            prefs = plistlib.load(f)
+        status = prefs.setdefault("NSServicesStatus", {})
+        status[key] = {
+            "enabled_context_menu": True,
+            "enabled_services_menu": True,
+            "presentation_modes": {"ContextMenu": True, "ServicesMenu": True},
+        }
+        with open(tmp_path, "wb") as f:
+            plistlib.dump(prefs, f)
+        subprocess.run(
+            ["defaults", "import", "pbs", tmp_path], check=True
+        )
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 def remove():
     if WORKFLOW_DIR.exists():
         shutil.rmtree(WORKFLOW_DIR)
+        subprocess.run(
+            ["/System/Library/CoreServices/pbs", "-update"], check=False
+        )
         print(f"已移除: {WORKFLOW_DIR}")
     else:
         print("尚未安裝，無需移除")
