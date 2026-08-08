@@ -59,6 +59,56 @@ def normalize(s):
     return "".join(ch for ch in s.casefold() if not ch.isspace())
 
 
+# OCR 常見的形近字混淆（單字元對單字元），比對時視為相同
+CONFUSABLE_MAP = str.maketrans({
+    "0": "o", "1": "l", "|": "l",
+    "2": "z", "5": "s", "8": "b", "9": "g",
+    "$": "s", "@": "a",
+    "‘": "'", "’": "'", "‚": "'",  # ‘ ’ ‚
+    "“": '"', "”": '"', "„": '"',  # “ ” „
+})
+
+
+def fold_confusables(s):
+    """將形近字元折疊成同一代表字元（長度不變）。"""
+    return s.translate(CONFUSABLE_MAP)
+
+
+def find_in_line(line_n, target_n, fuzzy_threshold=0.8):
+    """在正規化後的行文字中尋找目標，回傳 (start, end) 或 None。
+
+    依序嘗試：完全比對 → 形近字折疊比對 → 近似比對（SequenceMatcher）。
+    """
+    pos = line_n.find(target_n)
+    if pos != -1:
+        return pos, pos + len(target_n)
+
+    line_f, target_f = fold_confusables(line_n), fold_confusables(target_n)
+    pos = line_f.find(target_f)
+    if pos != -1:
+        return pos, pos + len(target_f)
+
+    # 近似比對：在行中滑動比較每個與目標等長（±2）的視窗
+    from difflib import SequenceMatcher
+
+    n, m = len(line_f), len(target_f)
+    if m < 3 or n < m - 2:
+        return None
+    best_ratio, best_span = 0.0, None
+    matcher = SequenceMatcher(b=target_f, autojunk=False)
+    for width in (m, m + 1, m + 2, max(3, m - 1), max(3, m - 2)):
+        for start in range(0, n - width + 1):
+            matcher.set_seq1(line_f[start : start + width])
+            if matcher.real_quick_ratio() < fuzzy_threshold:
+                continue
+            ratio = matcher.ratio()
+            if ratio > best_ratio:
+                best_ratio, best_span = ratio, (start, start + width)
+    if best_ratio >= fuzzy_threshold:
+        return best_span
+    return None
+
+
 def find_text_boxes(image_path, target, img_size, match_all=False):
     """找出 target 文字在圖片中的像素座標框 [(x0, y0, x1, y1), ...]"""
     W, H = img_size
@@ -78,13 +128,23 @@ def find_text_boxes(image_path, target, img_size, match_all=False):
                 index_map.append(i)
         line_n = "".join(norm_chars)
 
+        # 先找所有完全符合的位置；整行都沒有時退而使用容錯比對（單一結果）
+        spans = []
         start = 0
         while True:
             pos = line_n.find(target_n, start)
             if pos == -1:
                 break
+            spans.append((pos, pos + len(target_n)))
+            start = pos + 1
+        if not spans:
+            span = find_in_line(line_n, target_n)
+            if span:
+                spans.append(span)
+
+        for pos, end in spans:
             lo = index_map[pos]
-            hi = index_map[pos + len(target_n) - 1] + 1
+            hi = index_map[end - 1] + 1
 
             # 取得該子字串的精準邊界框（normalized 座標，原點在左下）
             rect_obs, _ = rec_text.boundingBoxForRange_error_(
@@ -98,7 +158,6 @@ def find_text_boxes(image_path, target, img_size, match_all=False):
             boxes.append((x, y, x + w, y + h))
             if not match_all:
                 return boxes
-            start = pos + 1
 
     if boxes:
         return boxes
