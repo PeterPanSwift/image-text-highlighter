@@ -82,7 +82,7 @@ python3 install_quick_action.py
 
 This installs two entry points (both prompt for the text in a dialog, then open the marked image in Preview; if the text isn't found, an alert lists all text detected in the image):
 
-1. **Open With app** (reliable): right-click any image → **Open With** → **圈選文字**. You can also drag images onto `~/Applications/圈選文字.app`. After entering the text, a color menu appears (common presets plus a custom color picker).
+1. **Open With app** (reliable): right-click any image → **Open With** → **圈選文字**. You can also drag images onto `~/Applications/圈選文字.app`. After entering the text, a style menu (3D glass bubble / glow ring / hand-drawn crayon) and a color menu (common presets plus a custom color picker) appear.
 2. **Quick Action**: right-click any image → **Quick Actions** → **圈選文字**. Note: hand-installed Quick Actions can be flaky on recent macOS — if it doesn't show up, use the Open With app instead.
 
 To uninstall both:
@@ -159,7 +159,7 @@ python3 install_quick_action.py
 
 會同時安裝兩種入口（都會跳出對話框詢問要圈選的文字，完成後自動用「預覽程式」打開結果；找不到文字時會列出圖片中偵測到的所有文字）：
 
-1. **打開檔案的應用程式**（推薦，穩定）：對圖片按右鍵 → **打開檔案的應用程式** → **圈選文字**，也可以直接把圖片拖到 `~/Applications/圈選文字.app` 上。輸入文字後會出現顏色選單（常用色 + 自訂調色盤）
+1. **打開檔案的應用程式**（推薦，穩定）：對圖片按右鍵 → **打開檔案的應用程式** → **圈選文字**，也可以直接把圖片拖到 `~/Applications/圈選文字.app` 上。輸入文字後會依序出現樣式選單（立體玻璃泡泡 / 發光框 / 手繪蠟筆）和顏色選單（常用色 + 自訂調色盤）
 2. **快速動作**：對圖片按右鍵 → **快速動作** → **圈選文字**。注意：手動安裝的快速動作在新版 macOS 上偶爾會從選單消失，遇到時請改用方式 1
 
 移除方式（兩者一併移除）：

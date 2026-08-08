@@ -158,13 +158,24 @@ def build_applescript(python_path):
         'f=" & quoted form of p & "; '
         'out=\\"${f%.*}_marked.png\\"; '
         '__PY__ " & quoted form of scriptPath & " \\"$f\\" '
-        '" & quoted form of t & " --color " & quoted form of hexColor & " '
+        '" & quoted form of t & " --style " & styleChoice & " '
+        '--color " & quoted form of hexColor & " '
         '-o \\"$out\\" '
         '>/dev/null && /usr/bin/open -a Preview \\"$out\\"'
     ).replace("__PY__", py)
     template = '''on run
     display dialog "使用方式：在 Finder 對圖片按右鍵 → 打開檔案的應用程式 → 圈選文字，或直接把圖片拖到這個 App 圖示上。" buttons {"好"} default button 1 with title "圈選文字"
 end run
+
+on chooseStyle()
+    set styleChoices to {"立體玻璃泡泡（預設）", "發光框", "手繪蠟筆"}
+    set picked to choose from list styleChoices with title "圈選文字" with prompt "選擇圈選樣式：" default items {"立體玻璃泡泡（預設）"}
+    if picked is false then return missing value
+    set choice to item 1 of picked
+    if choice is "發光框" then return "glow"
+    if choice is "手繪蠟筆" then return "crayon"
+    return "bubble"
+end chooseStyle
 
 on chooseHexColor()
     set colorChoices to {"藍色（預設）", "紅色", "橘色", "綠色", "紫色", "粉紅色", "自訂顏色…"}
@@ -199,6 +210,8 @@ on open theFiles
             return
         end try
         if t is not "" then
+            set styleChoice to chooseStyle()
+            if styleChoice is missing value then return
             set hexColor to chooseHexColor()
             if hexColor is missing value then return
             try
