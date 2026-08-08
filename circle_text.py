@@ -295,20 +295,29 @@ def draw_glow_highlight(img, padded_box, radius, color=(64, 156, 255)):
     """在框周圍畫出發光的圓角圈選框（iOS glow highlight 風格）。"""
     W, H = img.size
     x0, y0, x1, y1 = padded_box
+    box_h = y1 - y0
 
-    # 線寬與光暈大小依圖片尺寸縮放
-    lw = max(3, round(min(W, H) * 0.006))
+    # 線寬同時參考框的高度與圖片尺寸：大圖裡圈小字時，
+    # 若只按圖片尺寸縮放，粗線和光暈會不成比例地蓋住文字
+    lw = max(2, round(min(box_h * 0.09, min(W, H) * 0.006)))
     glow_blur = lw * 2.2
 
     img = img.convert("RGBA")
 
-    # 光暈層：畫粗的彩色框再高斯模糊，疊兩次讓光暈更亮
+    # 光暈層：畫粗的彩色框再高斯模糊，疊兩次讓光暈更亮；
+    # 把框內部挖空，讓光只向外暈開、不染到圈選的文字
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
     gd.rounded_rectangle(
         (x0, y0, x1, y1), radius=radius, outline=color + (255,), width=lw * 3
     )
     glow = glow.filter(ImageFilter.GaussianBlur(glow_blur))
+    gd = ImageDraw.Draw(glow)
+    gd.rounded_rectangle(
+        (x0 + lw, y0 + lw, x1 - lw, y1 - lw),
+        radius=max(1, radius - lw),
+        fill=(0, 0, 0, 0),
+    )
     img.alpha_composite(glow)
     img.alpha_composite(glow)
 
