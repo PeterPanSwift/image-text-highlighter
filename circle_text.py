@@ -257,13 +257,22 @@ def find_text_boxes(image_path, target, img_size, match_all=False):
 
 # ----------------------------------------------------------- 容器偵測 ----
 
-def detect_container(rgb, box, tol=16):
+def detect_container(rgb, box):
     """偵測文字背後的 UI 容器色塊（按鈕、選單、輸入框等）。
 
     從文字框旁取樣容器底色，往四周掃描顏色相近的連續區域。
-    偵測結果不合理（例如擴到整個視窗背景）時回傳 None，
-    呼叫端應回退使用原本的文字框。
+    先用較寬的顏色容差，若擴張結果不合理（抓到整片背景，常見於
+    容器底色與視窗背景對比很低的深色介面）就縮小容差重試。
+    全部失敗時回傳 None，呼叫端應回退使用原本的文字框。
     """
+    for tol in (16, 10, 6, 4):
+        result = _detect_container_tol(rgb, box, tol)
+        if result:
+            return result
+    return None
+
+
+def _detect_container_tol(rgb, box, tol):
     W, H = rgb.size
     px = rgb.load()
     x0 = max(0, min(int(box[0]), W - 1))
@@ -273,9 +282,13 @@ def detect_container(rgb, box, tol=16):
     th = y1 - y0
     cy = (y0 + y1) // 2
 
-    # 容器底色：取文字結尾右側一點的顏色
-    sx = min(W - 1, x1 + max(3, th // 6))
-    fill = px[sx, cy]
+    # 容器底色：在文字結尾右側取多點的中位數，避免採到字緣的反鋸齒像素
+    samples = []
+    for dx in (max(3, th // 6), max(5, th // 3), max(8, th // 2)):
+        sx = min(W - 1, x1 + dx)
+        samples.append(px[sx, cy])
+    samples.sort(key=lambda c: c[0] + c[1] + c[2])
+    fill = samples[len(samples) // 2]
 
     def match(p):
         return (
