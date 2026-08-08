@@ -19,7 +19,7 @@ import unicodedata
 import Quartz
 import Vision
 from Foundation import NSURL, NSRange
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
 # ---------------------------------------------------------------- OCR ----
@@ -268,7 +268,7 @@ def pad_box(img_size, box):
     x0, y0, x1, y1 = box
     box_h = y1 - y0
     pad_x = max(10, box_h * 0.55)
-    pad_y = max(8, box_h * 0.40)
+    pad_y = max(9, box_h * 0.45)
     x0, y0 = max(2, x0 - pad_x), max(2, y0 - pad_y)
     x1, y1 = min(W - 2, x1 + pad_x), min(H - 2, y1 + pad_y)
     radius = min((y1 - y0) / 2, (x1 - x0) / 2)
@@ -288,6 +288,141 @@ def dim_background(img, padded_boxes, strength=0.35):
         ImageFilter.GaussianBlur(max(2, round(min(W, H) * 0.004)))
     )
     img.alpha_composite(overlay)
+    return img
+
+
+def _v_gradient(width, height, top_alpha, bottom_alpha):
+    """由上而下的垂直漸層遮罩（L 模式）。"""
+    height = max(2, height)
+    col = Image.new("L", (1, height))
+    for i in range(height):
+        col.putpixel(
+            (0, i),
+            round(top_alpha + (bottom_alpha - top_alpha) * i / (height - 1)),
+        )
+    return col.resize((max(1, width), height))
+
+
+def _paste_masked(img, layer_rgb, alpha_mask, pos):
+    """把小圖層以指定透明度遮罩合成到大圖上。"""
+    W, H = img.size
+    full = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    full.paste(layer_rgb, pos, alpha_mask)
+    img.alpha_composite(full)
+
+
+def draw_bubble_highlight(img, padded_box, radius, color=(64, 156, 255)):
+    """3D 玻璃泡泡效果：投影、內容微放大、立體光影、鏡面高光。"""
+    W, H = img.size
+    x0, y0, x1, y1 = (round(v) for v in padded_box)
+    bw, bh = x1 - x0, y1 - y0
+    radius = min(radius, bh / 2, bw / 2)
+    lw = max(2, round(min(bh * 0.07, min(W, H) * 0.005)))
+
+    img = img.convert("RGBA")
+
+    # 圓角遮罩（泡泡形狀，重複使用）
+    bubble_mask = Image.new("L", (bw, bh), 0)
+    ImageDraw.Draw(bubble_mask).rounded_rectangle(
+        (0, 0, bw - 1, bh - 1), radius=radius, fill=255
+    )
+
+    # 先取原始內容（要在畫陰影前取，避免拍到陰影）
+    region = img.crop((x0, y0, x1, y1))
+
+    # 1. 底部投影：讓泡泡浮起來
+    off = max(3, round(bh * 0.12))
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        (x0, y0 + off, x1, y1 + off), radius=radius, fill=(0, 0, 0, 130)
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(bh * 0.10))
+    img.alpha_composite(shadow)
+
+    # 2. 內容微放大：凸透鏡的放大感
+    scale = 1.08
+    ew, eh = round(bw * scale), round(bh * scale)
+    enlarged = region.resize((ew, eh), Image.LANCZOS)
+    cx, cy = (ew - bw) // 2, (eh - bh) // 2
+    enlarged = enlarged.crop((cx, cy, cx + bw, cy + bh))
+    img.paste(enlarged, (x0, y0), bubble_mask)
+
+    # 3. 立體光影：上半透白光、下緣沉一點暗色
+    light = Image.new("RGBA", (bw, bh), (255, 255, 255, 255))
+    light_mask = ImageChops.multiply(
+        _v_gradient(bw, bh, 55, 0), bubble_mask
+    )
+    _paste_masked(img, light, light_mask, (x0, y0))
+
+    dark = Image.new("RGBA", (bw, bh), (0, 0, 25, 255))
+    dark_mask = ImageChops.multiply(
+        _v_gradient(bw, bh, 0, 40), bubble_mask
+    )
+    _paste_masked(img, dark, dark_mask, (x0, y0))
+
+    # 4. 頂部鏡面高光：窄而亮的反光條，才有玻璃質感
+    spec = Image.new("L", (bw, bh), 0)
+    spec_top = max(2, round(bh * 0.07))
+    spec_h = round(bh * 0.24)
+    inset_x = max(4, round(bw * 0.05))
+    ImageDraw.Draw(spec).rounded_rectangle(
+        (inset_x, spec_top, bw - inset_x, spec_top + spec_h),
+        radius=max(2, round(spec_h / 2)),
+        fill=125,
+    )
+    spec = spec.filter(ImageFilter.GaussianBlur(bh * 0.03))
+    spec = ImageChops.multiply(spec, bubble_mask)
+    _paste_masked(img, Image.new("RGBA", (bw, bh), (255, 255, 255, 255)),
+                  spec, (x0, y0))
+
+    # 4b. 底部回光：玻璃下緣的細反射
+    counter = Image.new("RGBA", (bw, bh), (255, 255, 255, 255))
+    counter_mask = ImageChops.multiply(
+        _v_gradient(bw, bh, 0, 45), bubble_mask
+    )
+    counter_band = Image.new("L", (bw, bh), 0)
+    ImageDraw.Draw(counter_band).rectangle(
+        (0, round(bh * 0.82), bw, bh), fill=255
+    )
+    counter_band = counter_band.filter(ImageFilter.GaussianBlur(bh * 0.05))
+    counter_mask = ImageChops.multiply(counter_mask, counter_band)
+    _paste_masked(img, counter, counter_mask, (x0, y0))
+
+    # 5. 柔和外光暈（比 glow 樣式收斂）
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rounded_rectangle(
+        (x0, y0, x1, y1), radius=radius, outline=color + (200,), width=lw * 2
+    )
+    glow = glow.filter(ImageFilter.GaussianBlur(lw * 1.8))
+    gd = ImageDraw.Draw(glow)
+    gd.rounded_rectangle(
+        (x0 + lw, y0 + lw, x1 - lw, y1 - lw),
+        radius=max(1, radius - lw),
+        fill=(0, 0, 0, 0),
+    )
+    img.alpha_composite(glow)
+
+    # 6. 主框 + 頂部受光的白色邊緣（光源在上方的立體感）
+    ring = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(ring).rounded_rectangle(
+        (x0, y0, x1, y1), radius=radius, outline=color + (255,), width=lw
+    )
+    ring = ring.filter(ImageFilter.GaussianBlur(lw * 0.2))
+    img.alpha_composite(ring)
+
+    rim = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(rim).rounded_rectangle(
+        (x0, y0, x1, y1),
+        radius=radius,
+        outline=(255, 255, 255, 255),
+        width=max(1, round(lw * 0.6)),
+    )
+    rim = rim.filter(ImageFilter.GaussianBlur(lw * 0.25))
+    rim_grad = Image.new("L", (W, H), 0)
+    rim_grad.paste(_v_gradient(bw, bh, 230, 0), (x0, y0))
+    rim.putalpha(ImageChops.multiply(rim.getchannel("A"), rim_grad))
+    img.alpha_composite(rim)
+
     return img
 
 
@@ -369,6 +504,12 @@ def main():
         metavar="0~1",
         help="背景壓暗程度，0 為不壓暗（預設 0.35）",
     )
+    parser.add_argument(
+        "--style",
+        choices=["bubble", "glow"],
+        default="bubble",
+        help="圈選樣式：bubble 立體玻璃泡泡（預設）/ glow 發光框",
+    )
     args = parser.parse_args()
 
     img = Image.open(args.image)
@@ -378,8 +519,9 @@ def main():
     padded = [pad_box(img.size, box) for box in boxes]
     if args.dim > 0:
         img = dim_background(img, padded, min(args.dim, 0.9))
+    draw = draw_bubble_highlight if args.style == "bubble" else draw_glow_highlight
     for box, radius in padded:
-        img = draw_glow_highlight(img, box, radius, color)
+        img = draw(img, box, radius, color)
 
     output = args.output
     if not output:
