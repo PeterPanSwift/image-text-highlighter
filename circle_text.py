@@ -177,18 +177,39 @@ def hex_to_rgb(color):
     return tuple(int(color[i : i + 2], 16) for i in (0, 2, 4))
 
 
-def draw_glow_highlight(img, box, color=(64, 156, 255)):
-    """在 box 周圍畫出發光的圓角圈選框（iOS glow highlight 風格）。"""
-    W, H = img.size
+def pad_box(img_size, box):
+    """把文字框往外擴一點呼吸空間，回傳 (框, 圓角半徑)。"""
+    W, H = img_size
     x0, y0, x1, y1 = box
     box_h = y1 - y0
-
-    # 框往外留一點呼吸空間
     pad_x = max(10, box_h * 0.55)
     pad_y = max(8, box_h * 0.40)
     x0, y0 = max(2, x0 - pad_x), max(2, y0 - pad_y)
     x1, y1 = min(W - 2, x1 + pad_x), min(H - 2, y1 + pad_y)
     radius = min((y1 - y0) / 2, (x1 - x0) / 2)
+    return (x0, y0, x1, y1), radius
+
+
+def dim_background(img, padded_boxes, strength=0.35):
+    """壓暗圈選框以外的區域，讓焦點落在圈選的文字上。"""
+    W, H = img.size
+    img = img.convert("RGBA")
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, round(255 * strength)))
+    od = ImageDraw.Draw(overlay)
+    for box, radius in padded_boxes:
+        od.rounded_rectangle(box, radius=radius, fill=(0, 0, 0, 0))
+    # 讓明暗交界柔和一點
+    overlay = overlay.filter(
+        ImageFilter.GaussianBlur(max(2, round(min(W, H) * 0.004)))
+    )
+    img.alpha_composite(overlay)
+    return img
+
+
+def draw_glow_highlight(img, padded_box, radius, color=(64, 156, 255)):
+    """在框周圍畫出發光的圓角圈選框（iOS glow highlight 風格）。"""
+    W, H = img.size
+    x0, y0, x1, y1 = padded_box
 
     # 線寬與光暈大小依圖片尺寸縮放
     lw = max(3, round(min(W, H) * 0.006))
@@ -247,14 +268,24 @@ def main():
     parser.add_argument(
         "--all", action="store_true", help="圈選文字出現的所有位置（預設只圈第一個）"
     )
+    parser.add_argument(
+        "--dim",
+        type=float,
+        default=0.35,
+        metavar="0~1",
+        help="背景壓暗程度，0 為不壓暗（預設 0.35）",
+    )
     args = parser.parse_args()
 
     img = Image.open(args.image)
     boxes = find_text_boxes(args.image, args.text, img.size, match_all=args.all)
 
     color = hex_to_rgb(args.color)
-    for box in boxes:
-        img = draw_glow_highlight(img, box, color)
+    padded = [pad_box(img.size, box) for box in boxes]
+    if args.dim > 0:
+        img = dim_background(img, padded, min(args.dim, 0.9))
+    for box, radius in padded:
+        img = draw_glow_highlight(img, box, radius, color)
 
     output = args.output
     if not output:

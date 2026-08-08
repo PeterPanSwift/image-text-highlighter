@@ -38,6 +38,7 @@ python3 circle_text.py image.png "text to highlight"
 | `-o output.png` | Output path (default: `<original name>_marked.png`) |
 | `--color "#FF3B30"` | Highlight color in hex (default: iOS blue `#409CFF`) |
 | `--all` | Highlight every occurrence of the text (default: first match only) |
+| `--dim 0.35` | How much to darken the rest of the image, 0–1; `0` disables (default: `0.35`) |
 
 ### Examples
 
@@ -56,6 +57,7 @@ python3 circle_text.py doc.png "keyword" --all
 
 - **Precise substring locating**: gets an accurate bounding box even when the target is only part of a line
 - **Fuzzy matching**: ignores case, whitespace, and full-width/half-width differences
+- **Focus dimming**: everything outside the highlight is slightly darkened (soft edges) so the marked text pops; tune or disable with `--dim`
 - **Auto scaling**: line width, glow size, and padding adapt to the image size — works for large screenshots and small images alike
 - **Helpful errors**: when the text isn't found, all text detected in the image is listed so you can adjust your keyword
 
@@ -108,6 +110,7 @@ python3 circle_text.py 圖片.png "要標記的文字"
 | `-o 輸出.png` | 指定輸出路徑（預設為 `原檔名_marked.png`） |
 | `--color "#FF3B30"` | 圈選顏色，hex 格式（預設 iOS 藍 `#409CFF`） |
 | `--all` | 圈選文字出現的所有位置（預設只圈第一個） |
+| `--dim 0.35` | 背景壓暗程度 0–1，`0` 為不壓暗（預設 `0.35`） |
 
 ### 範例
 
@@ -126,6 +129,7 @@ python3 circle_text.py doc.png "重點" --all
 
 - **精準子字串定位**：即使目標文字只是某一行的一部分，也會取得精確的邊界框
 - **模糊比對**：自動忽略大小寫、空白、全形半形差異
+- **聚焦壓暗**：圈選框以外的區域會稍微變暗（邊緣柔和過渡），讓標記的文字更突出，可用 `--dim` 調整或關閉
 - **自動縮放**：線寬、光暈大小、留白依圖片尺寸調整，大截圖和小圖都適用
 - **友善錯誤提示**：找不到文字時，會列出圖片中實際偵測到的所有文字，方便調整關鍵字
 
