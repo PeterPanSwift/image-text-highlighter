@@ -152,7 +152,7 @@ def _find_in_single_lines(lines, target_n, match_all, W, H):
 
         for pos, end in spans:
             lo, hi = index_map[pos], index_map[end - 1] + 1
-            boxes.append(_range_box(rec_text, obs, lo, hi, W, H))
+            boxes.append([_range_box(rec_text, obs, lo, hi, W, H)])
             if not match_all:
                 return boxes
     return boxes
@@ -209,19 +209,19 @@ def _find_across_row(row, target_n, W, H):
         lo, hi = involved.get(idx, (j, j))
         involved[idx] = (min(lo, j), max(hi, j))
 
-    union = None
+    segments = []
     for idx, (lo, hi) in involved.items():
         raw, rec_text, obs = row[idx]
-        b = _range_box(rec_text, obs, lo, hi + 1, W, H)
-        union = b if union is None else (
-            min(union[0], b[0]), min(union[1], b[1]),
-            max(union[2], b[2]), max(union[3], b[3]),
-        )
-    return union
+        segments.append(_range_box(rec_text, obs, lo, hi + 1, W, H))
+    return segments
 
 
 def find_text_boxes(image_path, target, img_size, match_all=False):
-    """找出 target 文字在圖片中的像素座標框 [(x0, y0, x1, y1), ...]"""
+    """找出 target 在圖片中的匹配位置。
+
+    回傳「群組」列表：每個群組是一次匹配，內含一個或多個文字段的
+    像素座標框（跨多個 OCR 區塊的匹配會有多個段）。
+    """
     W, H = img_size
     lines = ocr_lines(image_path)
     if not lines:
@@ -239,9 +239,9 @@ def find_text_boxes(image_path, target, img_size, match_all=False):
     for row in _group_rows(lines):
         if len(row) < 2:
             continue
-        box = _find_across_row(row, target_n, W, H)
-        if box:
-            boxes.append(box)
+        segments = _find_across_row(row, target_n, W, H)
+        if segments:
+            boxes.append(segments)
             if not match_all:
                 return boxes
     if boxes:
@@ -253,6 +253,93 @@ def find_text_boxes(image_path, target, img_size, match_all=False):
     for raw, _, _ in lines:
         print(f"  - {raw}", file=sys.stderr)
     sys.exit(1)
+
+
+# ----------------------------------------------------------- 容器偵測 ----
+
+def detect_container(rgb, box, tol=16):
+    """偵測文字背後的 UI 容器色塊（按鈕、選單、輸入框等）。
+
+    從文字框旁取樣容器底色，往四周掃描顏色相近的連續區域。
+    偵測結果不合理（例如擴到整個視窗背景）時回傳 None，
+    呼叫端應回退使用原本的文字框。
+    """
+    W, H = rgb.size
+    px = rgb.load()
+    x0 = max(0, min(int(box[0]), W - 1))
+    y0 = max(0, min(int(box[1]), H - 1))
+    x1 = max(x0 + 1, min(int(box[2]), W - 1))
+    y1 = max(y0 + 1, min(int(box[3]), H - 1))
+    th = y1 - y0
+    cy = (y0 + y1) // 2
+
+    # 容器底色：取文字結尾右側一點的顏色
+    sx = min(W - 1, x1 + max(3, th // 6))
+    fill = px[sx, cy]
+
+    def match(p):
+        return (
+            abs(p[0] - fill[0]) <= tol
+            and abs(p[1] - fill[1]) <= tol
+            and abs(p[2] - fill[2]) <= tol
+        )
+
+    def col_frac(x, ya, yb):
+        """x 這一直行在 [ya, yb] 間符合底色的比例。"""
+        step = max(1, (yb - ya) // 24)
+        pts = range(ya, yb + 1, step)
+        return sum(match(px[x, y]) for y in pts) / max(1, len(pts))
+
+    def row_frac(y, xa, xb):
+        step = max(1, (xb - xa) // 60)
+        pts = range(xa, xb + 1, step)
+        return sum(match(px[x, y]) for x in pts) / max(1, len(pts))
+
+    FR = 0.6
+
+    def expand_h(start, direction, ya, yb):
+        """水平擴張；容忍小段不符（如選單的 ⌄ 圖示）後繼續。"""
+        pos = start
+        max_gap = max(4, round(th * 1.2))
+        while 0 <= pos + direction < W:
+            if col_frac(pos + direction, ya, yb) >= FR:
+                pos += direction
+                continue
+            jumped = False
+            for g in range(2, max_gap):
+                cand = pos + direction * g
+                if not (0 <= cand < W):
+                    break
+                if col_frac(cand, ya, yb) >= FR:
+                    pos = cand
+                    jumped = True
+                    break
+            if not jumped:
+                break
+        return pos
+
+    L = expand_h(x0, -1, y0, y1)
+    R = expand_h(x1, +1, y0, y1)
+
+    T, B = y0, y1
+    while T - 1 >= 0 and row_frac(T - 1, L, R) >= FR:
+        T -= 1
+    while B + 1 < H and row_frac(B + 1, L, R) >= FR:
+        B += 1
+
+    # 合理性檢查：擴太多代表抓到的是大面積背景而不是控制項
+    if (B - T) > th * 2.8 or (R - L) >= W * 0.95:
+        return None
+    return (float(L), float(T), float(R), float(B))
+
+
+def union_boxes(boxes):
+    return (
+        min(b[0] for b in boxes),
+        min(b[1] for b in boxes),
+        max(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    )
 
 
 # ------------------------------------------------------------- 畫圈選 ----
@@ -510,10 +597,47 @@ def main():
         default="bubble",
         help="圈選樣式：bubble 立體玻璃泡泡（預設）/ glow 發光框",
     )
+    parser.add_argument(
+        "--no-container",
+        action="store_true",
+        help="停用容器偵測（預設會自動把圈選延伸到文字所在的按鈕/選單色塊）",
+    )
+    parser.add_argument(
+        "--extend",
+        default=None,
+        metavar="R 或 L,T,R,B",
+        help="手動延伸圈選框（像素）。單一數字只延伸右側，"
+        "或以逗號給出 左,上,右,下 四個值",
+    )
     args = parser.parse_args()
 
+    extend = (0.0, 0.0, 0.0, 0.0)
+    if args.extend:
+        parts = [float(v) for v in args.extend.split(",")]
+        if len(parts) == 1:
+            extend = (0.0, 0.0, parts[0], 0.0)
+        elif len(parts) == 4:
+            extend = tuple(parts)
+        else:
+            sys.exit("錯誤: --extend 需要 1 個或 4 個數字（左,上,右,下）")
+
     img = Image.open(args.image)
-    boxes = find_text_boxes(args.image, args.text, img.size, match_all=args.all)
+    groups = find_text_boxes(
+        args.image, args.text, img.size, match_all=args.all
+    )
+
+    # 每個文字段先嘗試延伸到其所在的 UI 容器色塊，再取聯集
+    rgb = img.convert("RGB")
+    boxes = []
+    for segments in groups:
+        if not args.no_container:
+            segments = [
+                detect_container(rgb, seg) or seg for seg in segments
+            ]
+        x0, y0, x1, y1 = union_boxes(segments)
+        boxes.append(
+            (x0 - extend[0], y0 - extend[1], x1 + extend[2], y1 + extend[3])
+        )
 
     color = hex_to_rgb(args.color)
     padded = [pad_box(img.size, box) for box in boxes]
