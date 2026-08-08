@@ -439,8 +439,13 @@ def draw_bubble_highlight(img, padded_box, radius, color=(64, 156, 255)):
     shadow = shadow.filter(ImageFilter.GaussianBlur(bh * 0.10))
     img.alpha_composite(shadow)
 
-    # 2. 內容微放大：凸透鏡的放大感
+    # 2. 內容微放大：凸透鏡的放大感。
+    # 放大會把邊緣內容往外推出泡泡，寬泡泡（如整個選單框）推移量
+    # 可觀，會裁到文字，因此依寬度動態調整倍率，限制邊緣最大推移量
+    max_shift = max(4.0, min(8.0, bh * 0.10))
     scale = 1.08
+    if bw > 2 * max_shift:
+        scale = min(1.08, 1.0 / (1.0 - 2 * max_shift / bw))
     ew, eh = round(bw * scale), round(bh * scale)
     enlarged = region.resize((ew, eh), Image.LANCZOS)
     cx, cy = (ew - bw) // 2, (eh - bh) // 2
