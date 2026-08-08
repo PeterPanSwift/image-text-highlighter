@@ -59,17 +59,20 @@ python3 circle_text.py doc.png "keyword" --all
 - **Auto scaling**: line width, glow size, and padding adapt to the image size — works for large screenshots and small images alike
 - **Helpful errors**: when the text isn't found, all text detected in the image is listed so you can adjust your keyword
 
-### Finder Quick Action (opens result in Preview)
+### Finder integration (opens result in Preview)
 
-Preview itself doesn't support plugins, but you can get one-click integration via a macOS Quick Action:
+Preview itself doesn't support plugins, but you can get one-click integration in Finder:
 
 ```bash
 python3 install_quick_action.py
 ```
 
-Then right-click any image in Finder → **Quick Actions** → **圈選文字**, type the text to highlight in the dialog, and the marked image opens in Preview automatically. If the text isn't found, an alert lists all text detected in the image.
+This installs two entry points (both prompt for the text in a dialog, then open the marked image in Preview; if the text isn't found, an alert lists all text detected in the image):
 
-To uninstall:
+1. **Open With app** (reliable): right-click any image → **Open With** → **圈選文字**. You can also drag images onto `~/Applications/圈選文字.app`.
+2. **Quick Action**: right-click any image → **Quick Actions** → **圈選文字**. Note: hand-installed Quick Actions can be flaky on recent macOS — if it doesn't show up, use the Open With app instead.
+
+To uninstall both:
 
 ```bash
 python3 install_quick_action.py --remove
@@ -126,17 +129,20 @@ python3 circle_text.py doc.png "重點" --all
 - **自動縮放**：線寬、光暈大小、留白依圖片尺寸調整，大截圖和小圖都適用
 - **友善錯誤提示**：找不到文字時，會列出圖片中實際偵測到的所有文字，方便調整關鍵字
 
-### Finder 快速動作（結果自動用「預覽程式」打開）
+### Finder 整合（結果自動用「預覽程式」打開）
 
-「預覽程式」本身不支援外掛，但可以透過 macOS 快速動作（Quick Action）達成一鍵整合：
+「預覽程式」本身不支援外掛，但可以在 Finder 達成一鍵整合：
 
 ```bash
 python3 install_quick_action.py
 ```
 
-安裝後，在 Finder 對任何圖片按右鍵 → **快速動作** → **圈選文字**，在對話框輸入要圈選的文字，標記完成的圖片會自動用「預覽程式」打開。若找不到文字，會跳出警告視窗列出圖片中偵測到的所有文字。
+會同時安裝兩種入口（都會跳出對話框詢問要圈選的文字，完成後自動用「預覽程式」打開結果；找不到文字時會列出圖片中偵測到的所有文字）：
 
-移除方式：
+1. **打開檔案的應用程式**（推薦，穩定）：對圖片按右鍵 → **打開檔案的應用程式** → **圈選文字**，也可以直接把圖片拖到 `~/Applications/圈選文字.app` 上
+2. **快速動作**：對圖片按右鍵 → **快速動作** → **圈選文字**。注意：手動安裝的快速動作在新版 macOS 上偶爾會從選單消失，遇到時請改用方式 1
+
+移除方式（兩者一併移除）：
 
 ```bash
 python3 install_quick_action.py --remove

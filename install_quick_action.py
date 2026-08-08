@@ -141,6 +141,95 @@ def build_document_wflow(shell_script):
     }
 
 
+APP_DIR = Path.home() / "Applications" / f"{SERVICE_NAME}.app"
+
+
+def build_applescript(python_path, script_path):
+    """「圈選文字.app」droplet 的 AppleScript 原始碼。"""
+    import shlex
+
+    py, sc = shlex.quote(python_path), shlex.quote(str(script_path))
+    # do shell script 使用 /bin/sh；${f%.*} 為 POSIX 語法可用
+    shell_cmd = (
+        f'f=" & quoted form of p & "; '
+        f'out=\\"${{f%.*}}_marked.png\\"; '
+        f'{py} {sc} \\"$f\\" " & quoted form of t & " -o \\"$out\\" '
+        f'>/dev/null && /usr/bin/open -a Preview \\"$out\\"'
+    )
+    return f'''on run
+    display dialog "使用方式：在 Finder 對圖片按右鍵 → 打開檔案的應用程式 → 圈選文字，或直接把圖片拖到這個 App 圖示上。" buttons {{"好"}} default button 1 with title "圈選文字"
+end run
+
+on open theFiles
+    repeat with f in theFiles
+        set p to POSIX path of f
+        set fileName to do shell script "basename " & quoted form of p
+        try
+            set dlg to display dialog "要在「" & fileName & "」中圈選的文字：" default answer "" with title "圈選文字" with icon note
+            set t to text returned of dlg
+        on error
+            return
+        end try
+        if t is not "" then
+            try
+                do shell script "{shell_cmd}"
+            on error errMsg
+                display alert "圈選失敗" message errMsg as warning
+            end try
+        end if
+    end repeat
+end open
+'''
+
+
+def install_open_with_app(python_path):
+    """編譯 AppleScript droplet 並註冊為圖片的「打開檔案的應用程式」選項。"""
+    import tempfile
+
+    APP_DIR.parent.mkdir(parents=True, exist_ok=True)
+    if APP_DIR.exists():
+        shutil.rmtree(APP_DIR)
+
+    source = build_applescript(python_path, CIRCLE_TEXT)
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".applescript", delete=False
+    ) as tmp:
+        tmp.write(source)
+        tmp_path = tmp.name
+    try:
+        subprocess.run(
+            ["osacompile", "-o", str(APP_DIR), tmp_path], check=True
+        )
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    # 宣告可開啟圖片檔，讓它出現在「打開檔案的應用程式」選單
+    info_path = APP_DIR / "Contents" / "Info.plist"
+    with open(info_path, "rb") as f:
+        info = plistlib.load(f)
+    info["CFBundleIdentifier"] = "com.vibecoding.circle-text"
+    info["CFBundleDisplayName"] = SERVICE_NAME
+    info["CFBundleName"] = SERVICE_NAME
+    info["CFBundleDocumentTypes"] = [
+        {
+            "CFBundleTypeName": "Image",
+            "CFBundleTypeRole": "Viewer",
+            "LSItemContentTypes": ["public.image"],
+            "LSHandlerRank": "Alternate",
+        }
+    ]
+    with open(info_path, "wb") as f:
+        plistlib.dump(info, f)
+
+    lsregister = (
+        "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+        "LaunchServices.framework/Support/lsregister"
+    )
+    subprocess.run([lsregister, "-f", str(APP_DIR)], check=False)
+    print(f"已安裝: {APP_DIR}")
+    print("使用方式: 對圖片按右鍵 → 打開檔案的應用程式 → 圈選文字")
+
+
 def install():
     if not CIRCLE_TEXT.exists():
         sys.exit(f"錯誤: 找不到 {CIRCLE_TEXT}")
@@ -186,6 +275,9 @@ def install():
     print(f"已安裝: {WORKFLOW_DIR}")
     print("使用方式: 在 Finder 對圖片按右鍵 → 快速動作 → 圈選文字")
 
+    # 快速動作在部分系統上會不穩定，同時安裝「打開檔案的應用程式」版本
+    install_open_with_app(sys.executable)
+
 
 def enable_service():
     """在 pbs 偏好設定中啟用本服務（等同於在系統設定的延伸功能中勾選）。
@@ -227,13 +319,19 @@ def enable_service():
 
 
 def remove():
+    removed = False
     if WORKFLOW_DIR.exists():
         shutil.rmtree(WORKFLOW_DIR)
         subprocess.run(
             ["/System/Library/CoreServices/pbs", "-update"], check=False
         )
         print(f"已移除: {WORKFLOW_DIR}")
-    else:
+        removed = True
+    if APP_DIR.exists():
+        shutil.rmtree(APP_DIR)
+        print(f"已移除: {APP_DIR}")
+        removed = True
+    if not removed:
         print("尚未安裝，無需移除")
 
 
