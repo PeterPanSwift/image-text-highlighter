@@ -109,24 +109,32 @@ def find_in_line(line_n, target_n, fuzzy_threshold=0.8):
     return None
 
 
-def find_text_boxes(image_path, target, img_size, match_all=False):
-    """找出 target 文字在圖片中的像素座標框 [(x0, y0, x1, y1), ...]"""
-    W, H = img_size
-    lines = ocr_lines(image_path)
-    if not lines:
-        sys.exit("錯誤: 圖片中偵測不到任何文字")
+def _norm_with_map(raw):
+    """回傳 (正規化字串, 每個正規化字元對應的原始字串索引)。"""
+    norm_chars, index_map = [], []
+    for i, ch in enumerate(raw):
+        for nch in normalize(ch):
+            norm_chars.append(nch)
+            index_map.append(i)
+    return "".join(norm_chars), index_map
 
-    target_n = normalize(target)
+
+def _range_box(rec_text, obs, lo, hi, W, H):
+    """取得原始字串 [lo, hi) 範圍的像素座標框。"""
+    rect_obs, _ = rec_text.boundingBoxForRange_error_(
+        NSRange(lo, hi - lo), None
+    )
+    bb = rect_obs.boundingBox() if rect_obs else obs.boundingBox()
+    x = bb.origin.x * W
+    y = (1 - bb.origin.y - bb.size.height) * H
+    return (x, y, x + bb.size.width * W, y + bb.size.height * H)
+
+
+def _find_in_single_lines(lines, target_n, match_all, W, H):
+    """逐一在每個 OCR 區塊內尋找目標。"""
     boxes = []
-
     for raw, rec_text, obs in lines:
-        # 建立「正規化字元 -> 原始字串索引」的對照表，才能精準取子字串範圍
-        norm_chars, index_map = [], []
-        for i, ch in enumerate(raw):
-            for nch in normalize(ch):
-                norm_chars.append(nch)
-                index_map.append(i)
-        line_n = "".join(norm_chars)
+        line_n, index_map = _norm_with_map(raw)
 
         # 先找所有完全符合的位置；整行都沒有時退而使用容錯比對（單一結果）
         spans = []
@@ -143,22 +151,99 @@ def find_text_boxes(image_path, target, img_size, match_all=False):
                 spans.append(span)
 
         for pos, end in spans:
-            lo = index_map[pos]
-            hi = index_map[end - 1] + 1
-
-            # 取得該子字串的精準邊界框（normalized 座標，原點在左下）
-            rect_obs, _ = rec_text.boundingBoxForRange_error_(
-                NSRange(lo, hi - lo), None
-            )
-            bb = rect_obs.boundingBox() if rect_obs else obs.boundingBox()
-            x = bb.origin.x * W
-            y = (1 - bb.origin.y - bb.size.height) * H
-            w = bb.size.width * W
-            h = bb.size.height * H
-            boxes.append((x, y, x + w, y + h))
+            lo, hi = index_map[pos], index_map[end - 1] + 1
+            boxes.append(_range_box(rec_text, obs, lo, hi, W, H))
             if not match_all:
                 return boxes
+    return boxes
 
+
+def _group_rows(lines):
+    """把垂直位置重疊的 OCR 區塊分組成「同一橫列」，列內由左至右排序。"""
+    items = []
+    for line in lines:
+        bb = line[2].boundingBox()
+        items.append(
+            (bb.origin.x, bb.origin.y, bb.origin.y + bb.size.height, line)
+        )
+    items.sort(key=lambda it: -it[2])  # 由上而下（normalized y 越大越上面）
+
+    rows = []
+    for x, y0, y1, line in items:
+        placed = False
+        for row in rows:
+            ry0, ry1 = row["y0"], row["y1"]
+            overlap = min(y1, ry1) - max(y0, ry0)
+            if overlap >= 0.5 * min(y1 - y0, ry1 - ry0):
+                row["items"].append((x, line))
+                row["y0"], row["y1"] = min(y0, ry0), max(y1, ry1)
+                placed = True
+                break
+        if not placed:
+            rows.append({"y0": y0, "y1": y1, "items": [(x, line)]})
+
+    for row in rows:
+        row["items"].sort(key=lambda it: it[0])
+    return [[line for _, line in row["items"]] for row in rows]
+
+
+def _find_across_row(row, target_n, W, H):
+    """把同一橫列的多個 OCR 區塊串起來比對（如 UI 的「標籤 + 值」）。"""
+    concat, seg_map = "", []  # seg_map: 每個字元對應 (區塊索引, 原始字元索引)
+    for idx, (raw, _, _) in enumerate(row):
+        line_n, index_map = _norm_with_map(raw)
+        concat += line_n
+        seg_map.extend((idx, j) for j in index_map)
+
+    pos = concat.find(target_n)
+    span = (pos, pos + len(target_n)) if pos != -1 else find_in_line(
+        concat, target_n
+    )
+    if not span:
+        return None
+
+    # 找出匹配範圍涉及哪些區塊、各自的字元範圍，取邊界框聯集
+    involved = {}
+    for k in range(span[0], span[1]):
+        idx, j = seg_map[k]
+        lo, hi = involved.get(idx, (j, j))
+        involved[idx] = (min(lo, j), max(hi, j))
+
+    union = None
+    for idx, (lo, hi) in involved.items():
+        raw, rec_text, obs = row[idx]
+        b = _range_box(rec_text, obs, lo, hi + 1, W, H)
+        union = b if union is None else (
+            min(union[0], b[0]), min(union[1], b[1]),
+            max(union[2], b[2]), max(union[3], b[3]),
+        )
+    return union
+
+
+def find_text_boxes(image_path, target, img_size, match_all=False):
+    """找出 target 文字在圖片中的像素座標框 [(x0, y0, x1, y1), ...]"""
+    W, H = img_size
+    lines = ocr_lines(image_path)
+    if not lines:
+        sys.exit("錯誤: 圖片中偵測不到任何文字")
+
+    target_n = normalize(target)
+
+    # 第一輪：在單一 OCR 區塊內找
+    boxes = _find_in_single_lines(lines, target_n, match_all, W, H)
+    if boxes:
+        return boxes
+
+    # 第二輪：目標可能橫跨同一列的多個區塊（例如「Interface: SwiftUI」
+    # 的標籤和選單值），把同列區塊串接後再找一次
+    for row in _group_rows(lines):
+        if len(row) < 2:
+            continue
+        box = _find_across_row(row, target_n, W, H)
+        if box:
+            boxes.append(box)
+            if not match_all:
+                return boxes
     if boxes:
         return boxes
 
