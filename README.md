@@ -4,6 +4,8 @@ Find specified text in an image and highlight it with a beautiful glowing outlin
 
 Uses the built-in macOS Vision framework for OCR (supports English and Chinese), then draws a glowing rounded-rectangle highlight with Pillow.
 
+> 🪐 每天 vibe coding App **#48** — 更多作品請見 [The Little AI App Planet](https://the-little-ai-app-planet.pages.dev) / Daily vibe coding app **#48** — see all apps at [The Little AI App Planet](https://the-little-ai-app-planet.pages.dev)
+
 [English](#english) | [中文說明](#中文說明)
 
 ## Demo
