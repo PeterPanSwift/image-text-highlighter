@@ -7,6 +7,7 @@
     python3 circle_text.py 圖片.png "要標記的文字" -o 輸出.png
     python3 circle_text.py 圖片.png "文字" --color "#FF5555"   # 換圈選顏色
     python3 circle_text.py 圖片.png "文字" --all               # 圈選所有出現的位置
+    python3 circle_text.py "文字"          # 不給圖片: 讀剪貼簿、結果放回剪貼簿
 
 使用 macOS 內建 Vision framework 做 OCR（支援中英文），
 再用 Pillow 畫出帶光暈的圓角圈選框（參考 iOS 風格的 glow highlight）。
@@ -687,14 +688,50 @@ def draw_crayon_highlight(img, padded_box, radius, color=(64, 156, 255)):
     return img
 
 
+# -------------------------------------------------------------- 剪貼簿 ----
+
+def image_from_pasteboard():
+    """從剪貼簿讀取圖片，沒有圖片時回傳 None。"""
+    import io
+
+    from AppKit import NSPasteboard
+
+    pb = NSPasteboard.generalPasteboard()
+    for uti in ("public.png", "public.tiff"):
+        data = pb.dataForType_(uti)
+        if data:
+            return Image.open(io.BytesIO(bytes(data)))
+    return None
+
+
+def image_to_pasteboard(img):
+    """把圖片以 PNG 格式放回剪貼簿。"""
+    import io
+
+    from AppKit import NSPasteboard
+    from Foundation import NSData
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    raw = buf.getvalue()
+    data = NSData.dataWithBytes_length_(raw, len(raw))
+    pb = NSPasteboard.generalPasteboard()
+    pb.clearContents()
+    pb.setData_forType_(data, "public.png")
+
+
 # ---------------------------------------------------------------- main ----
 
 def main():
     parser = argparse.ArgumentParser(
-        description="在圖片中找到指定文字並加上發光圈選標記"
+        description="在圖片中找到指定文字並加上發光圈選標記",
+        epilog="省略圖片路徑時，會讀取剪貼簿中的圖片，"
+        "圈選完成後把結果放回剪貼簿。",
     )
-    parser.add_argument("image", help="圖片路徑")
-    parser.add_argument("text", help="要圈選的文字")
+    parser.add_argument(
+        "image", nargs="?", help="圖片路徑（省略時使用剪貼簿中的圖片）"
+    )
+    parser.add_argument("text", nargs="?", help="要圈選的文字")
     parser.add_argument("-o", "--output", help="輸出路徑（預設: 原檔名_marked.png）")
     parser.add_argument(
         "--color", default="#409CFF", help="圈選顏色 hex（預設 #409CFF 藍色）"
@@ -740,9 +777,29 @@ def main():
         else:
             sys.exit("錯誤: --extend 需要 1 個或 4 個數字（左,上,右,下）")
 
-    img = Image.open(args.image)
+    # 只給一個位置引數時，視為「文字」，圖片改用剪貼簿
+    if args.text is None:
+        args.image, args.text = None, args.image
+    if args.text is None:
+        parser.error("缺少要圈選的文字")
+
+    from_pasteboard = args.image is None
+    if from_pasteboard:
+        img = image_from_pasteboard()
+        if img is None:
+            sys.exit("錯誤: 剪貼簿中沒有圖片（可先截圖到剪貼簿：⌃⇧⌘4）")
+        # OCR 走檔案路徑，把剪貼簿圖片存成暫存檔
+        import tempfile
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        img.save(tmp.name)
+        image_path = tmp.name
+    else:
+        image_path = args.image
+        img = Image.open(image_path)
+
     groups = find_text_boxes(
-        args.image, args.text, img.size, match_all=args.all
+        image_path, args.text, img.size, match_all=args.all
     )
 
     # 每個文字段先嘗試延伸到其所在的 UI 容器色塊，再取聯集
@@ -774,6 +831,19 @@ def main():
     }[args.style]
     for box, radius in padded:
         img = draw(img, box, radius, color)
+
+    if from_pasteboard:
+        # 結果放回剪貼簿；有指定 -o 時同時存檔
+        image_to_pasteboard(img)
+        if args.output:
+            img.save(args.output)
+            print(
+                f"已圈選 {len(boxes)} 處「{args.text}」"
+                f"→ 剪貼簿 + {args.output}"
+            )
+        else:
+            print(f"已圈選 {len(boxes)} 處「{args.text}」→ 已放回剪貼簿")
+        return
 
     output = args.output
     if not output:

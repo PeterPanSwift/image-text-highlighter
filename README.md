@@ -45,6 +45,12 @@ pip3 install Pillow pyobjc-framework-Vision
 python3 circle_text.py image.png "text to highlight"
 ```
 
+Omit the image path to use the clipboard: the image is read from the pasteboard and the marked result is copied back (handy after ⌃⇧⌘4 screenshots):
+
+```bash
+python3 circle_text.py "text to highlight"
+```
+
 ### Options
 
 | Option | Description |
@@ -120,6 +126,12 @@ pip3 install Pillow pyobjc-framework-Vision
 
 ```bash
 python3 circle_text.py 圖片.png "要標記的文字"
+```
+
+省略圖片路徑時會改用剪貼簿：讀取剪貼簿中的圖片，圈選完成後把結果放回剪貼簿（搭配 ⌃⇧⌘4 截圖到剪貼簿特別方便）：
+
+```bash
+python3 circle_text.py "要標記的文字"
 ```
 
 ### 選項
