@@ -8,9 +8,13 @@ Uses the built-in macOS Vision framework for OCR (supports English and Chinese),
 
 ## Demo
 
-| English (default blue) | Chinese (custom red) |
-| --- | --- |
-| ![English demo](test_menu_marked.png) | ![Chinese demo](test_zh_marked.png) |
+Highlight code in a screenshot (custom yellow, 3D glass bubble):
+
+![Code highlight demo](demo_code_marked.png)
+
+Search "Interface: SwiftUI" and the highlight expands to the whole popup control (container detection):
+
+![Container detection demo](demo_xcode_marked.png)
 
 ---
 
