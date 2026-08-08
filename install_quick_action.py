@@ -155,15 +155,37 @@ def build_applescript(python_path):
     py = shlex.quote(python_path)
     # do shell script 使用 /bin/sh；${f%.*} 為 POSIX 語法可用
     shell_cmd = (
-        f'f=" & quoted form of p & "; '
-        f'out=\\"${{f%.*}}_marked.png\\"; '
-        f'{py} " & quoted form of scriptPath & " \\"$f\\" '
-        f'" & quoted form of t & " -o \\"$out\\" '
-        f'>/dev/null && /usr/bin/open -a Preview \\"$out\\"'
-    )
-    return f'''on run
-    display dialog "使用方式：在 Finder 對圖片按右鍵 → 打開檔案的應用程式 → 圈選文字，或直接把圖片拖到這個 App 圖示上。" buttons {{"好"}} default button 1 with title "圈選文字"
+        'f=" & quoted form of p & "; '
+        'out=\\"${f%.*}_marked.png\\"; '
+        '__PY__ " & quoted form of scriptPath & " \\"$f\\" '
+        '" & quoted form of t & " --color " & quoted form of hexColor & " '
+        '-o \\"$out\\" '
+        '>/dev/null && /usr/bin/open -a Preview \\"$out\\"'
+    ).replace("__PY__", py)
+    template = '''on run
+    display dialog "使用方式：在 Finder 對圖片按右鍵 → 打開檔案的應用程式 → 圈選文字，或直接把圖片拖到這個 App 圖示上。" buttons {"好"} default button 1 with title "圈選文字"
 end run
+
+on chooseHexColor()
+    set colorChoices to {"藍色（預設）", "紅色", "橘色", "綠色", "紫色", "粉紅色", "自訂顏色…"}
+    set picked to choose from list colorChoices with title "圈選文字" with prompt "選擇圈選顏色：" default items {"藍色（預設）"}
+    if picked is false then return missing value
+    set choice to item 1 of picked
+    if choice is "紅色" then return "#FF3B30"
+    if choice is "橘色" then return "#FF9500"
+    if choice is "綠色" then return "#34C759"
+    if choice is "紫色" then return "#AF52DE"
+    if choice is "粉紅色" then return "#FF2D55"
+    if choice is "自訂顏色…" then
+        try
+            set rgb to choose color default color {16448, 40092, 65535}
+        on error
+            return missing value
+        end try
+        return do shell script "printf '#%02X%02X%02X' " & ((item 1 of rgb) div 257) & " " & ((item 2 of rgb) div 257) & " " & ((item 3 of rgb) div 257)
+    end if
+    return "#409CFF"
+end chooseHexColor
 
 on open theFiles
     set scriptPath to POSIX path of (path to me) & "Contents/Resources/circle_text.py"
@@ -177,8 +199,10 @@ on open theFiles
             return
         end try
         if t is not "" then
+            set hexColor to chooseHexColor()
+            if hexColor is missing value then return
             try
-                do shell script "{shell_cmd}"
+                do shell script "__SHELL_CMD__"
             on error errMsg
                 display alert "圈選失敗" message errMsg as warning
             end try
@@ -186,6 +210,7 @@ on open theFiles
     end repeat
 end open
 '''
+    return template.replace("__SHELL_CMD__", shell_cmd)
 
 
 def install_open_with_app(python_path):
