@@ -604,7 +604,7 @@ def draw_glow_highlight(img, padded_box, radius, color=(64, 156, 255)):
 
 
 def draw_crayon_highlight(img, padded_box, radius, color=(64, 156, 255)):
-    """手繪蠟筆風格：不規則橢圓、筆壓粗細變化、蠟質顆粒紋理。"""
+    """手繪蠟筆風格：粗實筆畫、不規則橢圓、收筆交疊、邊緣粉屑。"""
     import math
     import random
 
@@ -613,67 +613,77 @@ def draw_crayon_highlight(img, padded_box, radius, color=(64, 156, 255)):
     cx, cy = (ex0 + ex1) / 2, (ey0 + ey1) / 2
     rx, ry = (ex1 - ex0) / 2, (ey1 - ey0) / 2
     bh = padded_box[3] - padded_box[1]
-    lw = max(3, round(min(bh * 0.11, min(W, H) * 0.008)))
+    # 蠟筆筆畫粗、存在感強
+    lw = max(5, round(min(bh * 0.17, min(W, H) * 0.035)))
 
     # 以框的位置當亂數種子：同一張圖同一目標，每次畫出來都一樣
     rng = random.Random(round(cx * 31 + cy * 17 + rx * 7 + ry * 3))
 
     img = img.convert("RGBA")
-    stroke = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
 
-    # 手繪通常會繞兩圈，每圈起點、擾動、顏色深淺都略有不同
-    for p in range(2):
-        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        ld = ImageDraw.Draw(layer)
+    # 一圈到底，收筆處多繞一段自然交疊（參考手繪的「打結」處）
+    theta0 = rng.uniform(0, 2 * math.pi)
+    sweep = 2 * math.pi + rng.uniform(0.5, 0.9)
+    rot = rng.uniform(-0.05, 0.05)  # 整體微傾斜
+    cr, sr = math.cos(rot), math.sin(rot)
+    # 半徑擾動：多個不諧和的正弦波疊加，畫出自然的不規則
+    harmonics = [
+        (rng.uniform(0.012, 0.035), rng.uniform(0, 2 * math.pi), k)
+        for k in (2, 3, 5)
+    ]
+    w_phase = rng.uniform(0, 2 * math.pi)
+    # 收筆那段略往外偏，讓交疊看得出是兩條線
+    drift = rng.uniform(0.03, 0.05)
 
-        theta0 = rng.uniform(0, 2 * math.pi)
-        sweep = 2 * math.pi + rng.uniform(0.3, 0.8)  # 頭尾交疊
-        # 半徑擾動：多個不諧和的正弦波疊加，畫出自然的不規則
-        harmonics = [
-            (rng.uniform(0.015, 0.045), rng.uniform(0, 2 * math.pi), k)
-            for k in (2, 3, 5)
-        ]
-        off_x = rng.uniform(-lw * 0.5, lw * 0.5)
-        off_y = rng.uniform(-lw * 0.5, lw * 0.5)
-        shade = 0.82 + 0.28 * rng.random()  # 每圈深淺不同
+    n = max(300, round((rx + ry) * 2.2))
+    for i in range(n + 1):
+        t = theta0 + sweep * i / n
+        frac = i / n
+        mod = 1 + sum(a * math.sin(k * t + ph) for a, ph, k in harmonics)
+        if frac > 0.86:  # 收筆段向外漂移
+            mod += drift * (frac - 0.86) / 0.14
+        dx = rx * mod * math.cos(t)
+        dy = ry * mod * math.sin(t)
+        px = cx + dx * cr - dy * sr + rng.uniform(-1.0, 1.0)
+        py = cy + dx * sr + dy * cr + rng.uniform(-1.0, 1.0)
+        # 筆壓變化：粗細起伏但整體維持粗實
+        w = lw * (0.85 + 0.25 * math.sin(t * 2.3 + w_phase))
+        # 每點顏色深淺微變，蠟的色澤不均勻
+        shade = 0.93 + 0.14 * rng.random()
         c = tuple(min(255, max(0, round(ch * shade))) for ch in color)
-        alpha = rng.randint(135, 175)
-        w_phase = rng.uniform(0, 2 * math.pi)
-
-        n = max(160, round((rx + ry) * 1.2))
-        for i in range(n + 1):
-            t = theta0 + sweep * i / n
-            mod = 1 + sum(
-                a * math.sin(k * t + ph) for a, ph, k in harmonics
-            )
-            px = cx + off_x + rx * mod * math.cos(t)
-            py = cy + off_y + ry * mod * math.sin(t)
-            # 筆壓變化：粗細沿路徑起伏 + 每點微小抖動
-            w = lw * (0.6 + 0.45 * (0.5 + 0.5 * math.sin(t * 2.3 + w_phase)))
-            px += rng.uniform(-0.8, 0.8)
-            py += rng.uniform(-0.8, 0.8)
+        ld.ellipse(
+            (px - w / 2, py - w / 2, px + w / 2, py + w / 2),
+            fill=c + (255,),
+        )
+        # 邊緣粉屑：偶爾在筆畫旁掉一點蠟屑
+        if rng.random() < 0.45:
+            ang = rng.uniform(0, 2 * math.pi)
+            dist = w * rng.uniform(0.55, 0.95)
+            dot = w * rng.uniform(0.10, 0.22)
+            qx, qy = px + dist * math.cos(ang), py + dist * math.sin(ang)
             ld.ellipse(
-                (px - w / 2, py - w / 2, px + w / 2, py + w / 2),
-                fill=c + (alpha,),
+                (qx - dot, qy - dot, qx + dot, qy + dot),
+                fill=c + (rng.randint(90, 170),),
             )
-        stroke.alpha_composite(layer)
 
-    # 蠟筆顆粒：細噪點 + 粗糙蠟面兩層紋理相乘進透明度
-    fine = Image.effect_noise((W, H), 70).point(
-        lambda v: min(255, 110 + v * 3 // 4)
+    # 蠟質紋理：核心保持厚實，只讓細顆粒在表面留下淺淺的刮痕
+    fine = Image.effect_noise((W, H), 64).point(
+        lambda v: min(255, 200 + v * 11 // 50)
     )
     coarse = (
-        Image.effect_noise((max(1, W // 4), max(1, H // 4)), 50)
+        Image.effect_noise((max(1, W // 3), max(1, H // 3)), 40)
         .resize((W, H), Image.BILINEAR)
-        .point(lambda v: min(255, 140 + v // 2))
+        .point(lambda v: min(255, 225 + v // 8))
     )
-    a = stroke.getchannel("A")
+    a = layer.getchannel("A")
     a = ImageChops.multiply(a, fine)
     a = ImageChops.multiply(a, coarse)
-    stroke.putalpha(a)
-    stroke = stroke.filter(ImageFilter.GaussianBlur(0.6))
+    layer.putalpha(a)
+    layer = layer.filter(ImageFilter.GaussianBlur(0.5))
 
-    img.alpha_composite(stroke)
+    img.alpha_composite(layer)
     return img
 
 
