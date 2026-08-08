@@ -59,6 +59,22 @@ python3 circle_text.py doc.png "keyword" --all
 - **Auto scaling**: line width, glow size, and padding adapt to the image size — works for large screenshots and small images alike
 - **Helpful errors**: when the text isn't found, all text detected in the image is listed so you can adjust your keyword
 
+### Finder Quick Action (opens result in Preview)
+
+Preview itself doesn't support plugins, but you can get one-click integration via a macOS Quick Action:
+
+```bash
+python3 install_quick_action.py
+```
+
+Then right-click any image in Finder → **Quick Actions** → **圈選文字**, type the text to highlight in the dialog, and the marked image opens in Preview automatically. If the text isn't found, an alert lists all text detected in the image.
+
+To uninstall:
+
+```bash
+python3 install_quick_action.py --remove
+```
+
 ---
 
 ## 中文說明
@@ -109,3 +125,19 @@ python3 circle_text.py doc.png "重點" --all
 - **模糊比對**：自動忽略大小寫、空白、全形半形差異
 - **自動縮放**：線寬、光暈大小、留白依圖片尺寸調整，大截圖和小圖都適用
 - **友善錯誤提示**：找不到文字時，會列出圖片中實際偵測到的所有文字，方便調整關鍵字
+
+### Finder 快速動作（結果自動用「預覽程式」打開）
+
+「預覽程式」本身不支援外掛，但可以透過 macOS 快速動作（Quick Action）達成一鍵整合：
+
+```bash
+python3 install_quick_action.py
+```
+
+安裝後，在 Finder 對任何圖片按右鍵 → **快速動作** → **圈選文字**，在對話框輸入要圈選的文字，標記完成的圖片會自動用「預覽程式」打開。若找不到文字，會跳出警告視窗列出圖片中偵測到的所有文字。
+
+移除方式：
+
+```bash
+python3 install_quick_action.py --remove
+```
