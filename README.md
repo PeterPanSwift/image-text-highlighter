@@ -14,6 +14,14 @@ Highlight code in a screenshot (custom yellow, 3D glass bubble):
 
 ![Code highlight demo](demo_code_marked.png)
 
+Glow ring style (`--style glow` / 發光框):
+
+![Glow style demo](demo_glow_marked.png)
+
+Hand-drawn crayon style (`--style crayon` / 手繪蠟筆):
+
+![Crayon style demo](demo_crayon_marked.png)
+
 Search "Interface: SwiftUI" and the highlight expands to the whole popup control (container detection):
 
 ![Container detection demo](demo_xcode_marked.png)
