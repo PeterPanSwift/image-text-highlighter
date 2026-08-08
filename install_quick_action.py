@@ -53,8 +53,13 @@ done
 '''
 
 
+BUNDLE_ID = f"com.apple.Automator.{SERVICE_NAME}"
+
+
 def build_info_plist():
     return {
+        "CFBundleIdentifier": BUNDLE_ID,
+        "CFBundleName": SERVICE_NAME,
         "NSServices": [
             {
                 "NSBackgroundColorName": "background",
@@ -63,7 +68,7 @@ def build_info_plist():
                 "NSMessage": "runWorkflowAsService",
                 "NSSendFileTypes": ["public.image"],
             }
-        ]
+        ],
     }
 
 
@@ -190,7 +195,10 @@ def enable_service():
     """
     import tempfile
 
-    key = f"(null) - {SERVICE_NAME} - runWorkflowAsService"
+    keys = [
+        f"{BUNDLE_ID} - {SERVICE_NAME} - runWorkflowAsService",
+        f"(null) - {SERVICE_NAME} - runWorkflowAsService",
+    ]
     with tempfile.NamedTemporaryFile(suffix=".plist", delete=False) as tmp:
         tmp_path = tmp.name
     try:
@@ -200,11 +208,15 @@ def enable_service():
         with open(tmp_path, "rb") as f:
             prefs = plistlib.load(f)
         status = prefs.setdefault("NSServicesStatus", {})
-        status[key] = {
-            "enabled_context_menu": True,
-            "enabled_services_menu": True,
-            "presentation_modes": {"ContextMenu": True, "ServicesMenu": True},
-        }
+        for key in keys:
+            status[key] = {
+                "enabled_context_menu": True,
+                "enabled_services_menu": True,
+                "presentation_modes": {
+                    "ContextMenu": True,
+                    "ServicesMenu": True,
+                },
+            }
         with open(tmp_path, "wb") as f:
             plistlib.dump(prefs, f)
         subprocess.run(
